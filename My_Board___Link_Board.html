@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Link Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f3ef;
+    --surface: #ffffff;
+    --border: rgba(0,0,0,0.08);
+    --border-strong: rgba(0,0,0,0.15);
+    --text: #1a1a1a;
+    --text-muted: #888;
+    --text-faint: #bbb;
+    --radius: 12px;
+    --toolbar-h: 60px;
+    --card-w: 240px;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  /* ── Toolbar ── */
+  #toolbar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--toolbar-h);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 16px;
+    z-index: 1000;
+  }
+
+  .tb-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tb-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  #board-title {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    border: none;
+    outline: none;
+    background: transparent;
+    min-width: 50px;
+    max-width: 200px;
+    flex-shrink: 0;
+    cursor: text;
+    border-bottom: 1.5px solid transparent;
+    padding: 2px 4px;
+    transition: border-color 0.15s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  #board-title:hover { border-bottom-color: var(--border-strong); }
+  #board-title:focus { border-bottom-color: var(--text); }
+  #board-title::placeholder { color: var(--text-faint); }
+
+  .tb-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--border-strong);
+    flex-shrink: 0;
+    margin: 0 2px;
+  }
+
+  #url-input {
+    flex: 1;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--bg);
+    outline: none;
+    transition: border-color 0.15s;
+    min-width: 0;
+  }
+  #url-input::placeholder { color: var(--text-faint); }
+  #url-input:focus { border-color: var(--text); background: #fff; }
+
+  .tb-btn {
+    height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    background: var(--surface);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.1s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tb-btn:hover { background: var(--bg); }
+  .tb-btn:active { transform: scale(0.97); }
+  .tb-btn.primary { background: var(--text); color: #fff; border-color: var(--text); }
+  .tb-btn.primary:hover { background: #333; }
+  .tb-btn.secondary { background: var(--bg); }
+
+  /* ── Board & Canvas ── */
+  #board {
+    position: fixed;
+    top: var(--toolbar-h);
+    left: 0; right: 0; bottom: 0;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #canvas {
+    position: absolute;
+    top: 0; left: 0;
+    min-width: 100%;
+    min-height: 100%;
+  }
+
+  .empty-state {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    margin-top: calc(var(--toolbar-h) / 2);
+    text-align: center;
+    pointer-events: none;
+    user-select: none;
+    width: 90%;
+    max-width: 320px;
+  }
+  .empty-state .big { font-size: 32px; margin-bottom: 8px; opacity: 0.25; }
+  .empty-state p { font-size: 14px; color: var(--text-faint); line-height: 2; }
+
+  /* ── Cards ── */
+  .link-card {
+    position: absolute;
+    width: var(--card-w);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: grab;
+    user-select: none;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.2s;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    touch-action: none;
+  }
+  .link-card:hover { border-color: var(--border-strong); box-shadow: 0 4px 20px rgba(0,0,0,0.07); }
+  .link-card.dragging { cursor: grabbing; box-shadow: 0 8px 30px rgba(0,0,0,0.13); border-color: var(--border-strong); z-index: 999; }
+
+  /* Colour variants */
+  .link-card.c-yellow { background: #fffbeb; border-color: rgba(245,158,11,0.35); }
+  .link-card.c-pink   { background: #fdf2f8; border-color: rgba(236,72,153,0.35); }
+  .link-card.c-blue   { background: #eff6ff; border-color: rgba(59,130,246,0.35); }
+  .link-card.c-green  { background: #f0fdf4; border-color: rgba(34,197,94,0.35); }
+  .link-card.c-purple { background: #faf5ff; border-color: rgba(168,85,247,0.35); }
+  .link-card.c-red    { background: #fef2f2; border-color: rgba(239,68,68,0.35); }
+  .link-card.c-teal   { background: #f0fdfa; border-color: rgba(20,184,166,0.35); }
+
+  /* Card header */
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .platform-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-instagram { background: #e1306c; }
+  .dot-tiktok { background: #010101; }
+  .dot-other { background: var(--text-faint); }
+  .dot-text { background: #94a3b8; }
+
+  .platform-label {
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    flex: 1;
+  }
+
+  /* Inline colour swatches in card header */
+  .colour-swatches {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .swatch {
+    width: 13px; height: 13px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.1s, border-color 0.1s;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .swatch:hover { transform: scale(1.25); }
+  .swatch.active { border-color: var(--text) !important; }
+  .swatch[data-c=""]       { background: #e5e5e5; border-color: #ccc !important; }
+  .swatch[data-c="yellow"] { background: #f59e0b; }
+  .swatch[data-c="pink"]   { background: #ec4899; }
+  .swatch[data-c="blue"]   { background: #3b82f6; }
+  .swatch[data-c="green"]  { background: #22c55e; }
+  .swatch[data-c="purple"] { background: #a855f7; }
+  .swatch[data-c="red"]    { background: #ef4444; }
+  .swatch[data-c="teal"]   { background: #14b8a6; }
+
+  /* Delete button */
+  .delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-faint);
+    font-size: 18px;
+    line-height: 1;
+    padding: 0;
+    width: 22px; height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.1s;
+    flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .delete-btn:hover { color: #d00; }
+
+  /* Link card note */
+  .card-note {
+    padding: 9px 12px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card-note textarea {
+    width: 100%;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    line-height: 1.5;
+    cursor: text;
+    min-height: 18px;
+    max-height: 110px;
+    overflow-y: auto;
+    display: block;
+  }
+  .card-note textarea::placeholder { color: var(--text-faint); font-style: italic; }
+
+  /* Text card body */
+  .text-body {
+    padding: 10px 12px 10px;
+    display: flex;
+    flex-direction: column;
+  }
+  .text-content-input {
+    width: 100%;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    color: var(--text);
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    line-height: 1.55;
+    cursor: text;
+    min-height: 56px;
+    max-height: 220px;
+    overflow-y: auto;
+    display: block;
+  }
+  .text-content-input::placeholder { color: var(--text-faint); font-style: italic; }
+
+  /* Card footer (link cards) */
+  .card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .card-url-short {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--text-faint);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+  .open-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    text-decoration: none;
+    padding: 4px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 0.1s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .open-link:hover { background: var(--bg); }
+
+  /* Toast */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: var(--text);
+    color: #fff;
+    font-size: 13px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    z-index: 9999;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── Mobile ── */
+  @media (max-width: 600px) {
+    :root {
+      --toolbar-h: 108px;
+      --card-w: min(240px, calc(100vw - 32px));
+    }
+
+    #toolbar {
+      flex-wrap: wrap;
+      height: var(--toolbar-h);
+      padding: 8px 12px;
+      gap: 6px;
+      align-content: center;
+    }
+
+    #board-title {
+      flex: 1;
+      min-width: 0;
+      max-width: none;
+      order: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tb-divider { display: none; }
+
+    .tb-actions {
+      order: 2;
+      flex-shrink: 0;
+    }
+
+    .tb-inputs {
+      order: 3;
+      width: 100%;
+    }
+
+    .tb-btn { padding: 0 11px; font-size: 12px; }
+
+    #toast { bottom: 16px; font-size: 12px; white-space: normal; max-width: 80vw; text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <input id="board-title" type="text" value="My Board" placeholder="Board name…" maxlength="40" spellcheck="false" title="Click to rename board" />
+  <div class="tb-divider"></div>
+  <div class="tb-inputs">
+    <input id="url-input" type="url" placeholder="Paste a link…" autocomplete="off" spellcheck="false" inputmode="url" />
+    <button class="tb-btn primary" id="add-btn">Link</button>
+    <button class="tb-btn secondary" id="add-text-btn">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h7M7 16h5"/></svg>
+      Text
+    </button>
+  </div>
+  <div class="tb-actions">
+    <button class="tb-btn" id="share-btn">
+      <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>
+      Share
+    </button>
+    <button class="tb-btn" id="clear-btn">Clear</button>
+  </div>
+</div>
+
+<div id="board">
+  <div id="canvas"></div>
+  <div class="empty-state" id="empty-state">
+    <div class="big">◎</div>
+    <p>Paste a link and press Enter<br>or tap <strong>Text</strong> to add a quick note<br>Click the coloured dot on any card to set its colour</p>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const canvas  = document.getElementById('canvas');
+const board   = document.getElementById('board');
+const input   = document.getElementById('url-input');
+const addBtn  = document.getElementById('add-btn');
+const addTxtBtn = document.getElementById('add-text-btn');
+const shareBtn  = document.getElementById('share-btn');
+const clearBtn  = document.getElementById('clear-btn');
+const emptyState = document.getElementById('empty-state');
+const toast     = document.getElementById('toast');
+const titleInput = document.getElementById('board-title');
+
+let cards = [];
+let dragState = null;
+
+const COLOURS = ['', 'yellow', 'pink', 'blue', 'green', 'purple', 'red', 'teal'];
+const COLOUR_HEX = {
+  yellow: '#f59e0b', pink: '#ec4899', blue: '#3b82f6',
+  green: '#22c55e', purple: '#a855f7', red: '#ef4444', teal: '#14b8a6'
+};
+
+/* ── Helpers ── */
+function platform(url) {
+  if (/instagram\.com/i.test(url)) return 'instagram';
+  if (/tiktok\.com/i.test(url)) return 'tiktok';
+  return 'other';
+}
+function platformLabel(p) {
+  return { instagram: 'Instagram', tiktok: 'TikTok', other: 'Link' }[p];
+}
+function shortUrl(url) {
+  const s = url.replace(/^https?:\/\//, '');
+  return s.length > 38 ? s.slice(0, 38) + '…' : s;
+}
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove('show'), 2500);
+}
+function getTitle() {
+  return titleInput.value.trim() || 'My Board';
+}
+
+/* ── State ── */
+function saveState() {
+  const data = {
+    title: getTitle(),
+    cards: cards.map(c => c.type === 'text'
+      ? { type: 'text', text: c.text || '', x: c.x, y: c.y, color: c.color || '' }
+      : { type: 'link', url: c.url, x: c.x, y: c.y, note: c.note || '', color: c.color || '' }
+    )
+  };
+  try {
+    const enc = btoa(unescape(encodeURIComponent(JSON.stringify(data))));
+    history.replaceState(null, '', '#' + enc);
+    document.title = getTitle() + ' · Link Board';
+  } catch(e) {}
+}
+
+function loadState() {
+  const hash = location.hash.slice(1);
+  if (!hash) return null;
+  try { return JSON.parse(decodeURIComponent(escape(atob(hash)))); }
+  catch { return null; }
+}
+
+function updateEmpty() {
+  emptyState.style.display = cards.length === 0 ? 'block' : 'none';
+}
+
+function updateCanvasSize() {
+  let maxX = board.offsetWidth;
+  let maxY = board.offsetHeight;
+  cards.forEach(c => {
+    maxX = Math.max(maxX, (c.x || 0) + 280);
+    maxY = Math.max(maxY, (c.y || 0) + 260);
+  });
+  canvas.style.width  = maxX + 'px';
+  canvas.style.height = maxY + 'px';
+}
+
+/* ── Colour helpers ── */
+function applyColour(el, cardData, colour) {
+  COLOURS.forEach(c => { if (c) el.classList.remove('c-' + c); });
+  cardData.color = colour;
+  if (colour) el.classList.add('c-' + colour);
+  el.querySelectorAll('.colour-swatches .swatch').forEach(s => {
+    s.classList.toggle('active', s.dataset.c === colour);
+  });
+}
+
+function makeColourStrip(cardData, el) {
+  const swatches = el.querySelector('.colour-swatches');
+  COLOURS.forEach(c => {
+    const btn = document.createElement('button');
+    btn.className = 'swatch' + (cardData.color === c ? ' active' : '');
+    btn.dataset.c = c;
+    btn.title = c || 'Default';
+    btn.addEventListener('mousedown', e => e.stopPropagation());
+    btn.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      applyColour(el, cardData, c);
+      saveState();
+    });
+    swatches.appendChild(btn);
+  });
+}
+
+/* ── Drag logic ── */
+function setupDrag(el, cardData) {
+  const NO_DRAG = 'textarea, input, a, .delete-btn, .colour-dot, .colour-strip, .open-link, .swatch';
+
+  el.addEventListener('mousedown', e => {
+    if (e.target.closest(NO_DRAG)) return;
+    e.preventDefault();
+    const rect = el.getBoundingClientRect();
+    dragState = { id: cardData.id, el, ox: e.clientX - rect.left, oy: e.clientY - rect.top };
+    el.classList.add('dragging');
+  });
+
+  el.addEventListener('touchstart', e => {
+    if (e.target.closest(NO_DRAG)) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    const rect = el.getBoundingClientRect();
+    dragState = { id: cardData.id, el, ox: t.clientX - rect.left, oy: t.clientY - rect.top };
+    el.classList.add('dragging');
+  }, { passive: false });
+}
+
+document.addEventListener('mousemove', e => {
+  if (!dragState) return;
+  const bRect = board.getBoundingClientRect();
+  let nx = e.clientX - bRect.left - dragState.ox + board.scrollLeft;
+  let ny = e.clientY - bRect.top  - dragState.oy + board.scrollTop;
+  nx = Math.max(0, nx);
+  ny = Math.max(0, ny);
+  dragState.el.style.left = nx + 'px';
+  dragState.el.style.top  = ny + 'px';
+});
+
+document.addEventListener('touchmove', e => {
+  if (!dragState) return;
+  if (e.cancelable) e.preventDefault();
+  const t = e.touches[0];
+  const bRect = board.getBoundingClientRect();
+  let nx = t.clientX - bRect.left - dragState.ox + board.scrollLeft;
+  let ny = t.clientY - bRect.top  - dragState.oy + board.scrollTop;
+  nx = Math.max(0, nx);
+  ny = Math.max(0, ny);
+  dragState.el.style.left = nx + 'px';
+  dragState.el.style.top  = ny + 'px';
+}, { passive: false });
+
+function endDrag() {
+  if (!dragState) return;
+  dragState.el.classList.remove('dragging');
+  const c = cards.find(c => c.id === dragState.id);
+  if (c) {
+    c.x = parseInt(dragState.el.style.left)  || 0;
+    c.y = parseInt(dragState.el.style.top)   || 0;
+    saveState();
+    updateCanvasSize();
+  }
+  dragState = null;
+}
+document.addEventListener('mouseup', endDrag);
+document.addEventListener('touchend', endDrag);
+
+/* ── Auto position ── */
+function autoPos() {
+  const isMobile = window.innerWidth <= 600;
+  const cols   = isMobile ? 1 : 4;
+  const gapX   = 256;
+  const gapY   = 200;
+  const startX = isMobile ? 16 : 32;
+  const startY = 32;
+  const col = cards.length % cols;
+  const row = Math.floor(cards.length / cols);
+  return { x: startX + col * gapX, y: startY + row * gapY };
+}
+
+/* ── Link card ── */
+function makeCard(url, x, y, note, color) {
+  const p  = platform(url);
+  const id = Date.now() + '_' + Math.random().toString(36).slice(2);
+  note  = note  || '';
+  color = color || '';
+
+  const el = document.createElement('div');
+  el.className = 'link-card';
+  el.dataset.id = id;
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+
+  el.innerHTML = `
+    <div class="card-header">
+      <span class="platform-dot dot-${p}"></span>
+      <span class="platform-label">${platformLabel(p)}</span>
+      <div class="colour-swatches"></div>
+      <button class="delete-btn" aria-label="Remove card">&times;</button>
+    </div>
+    <div class="card-note">
+      <textarea placeholder="Add a note…" spellcheck="true"></textarea>
+    </div>
+    <div class="card-footer">
+      <span class="card-url-short">${shortUrl(url)}</span>
+      <a class="open-link" href="${url}" target="_blank" rel="noopener">
+        Open
+        <svg width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </a>
+    </div>
+  `;
+
+  const textarea = el.querySelector('textarea');
+  textarea.value = note;
+  function autoResize() {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 110) + 'px';
+  }
+  setTimeout(autoResize, 0);
+
+  const cardData = { id, type: 'link', url, x, y, note, color, el };
+
+  makeColourStrip(cardData, el);
+
+  if (color) applyColour(el, cardData, color);
+
+  textarea.addEventListener('input', () => {
+    cardData.note = textarea.value;
+    autoResize();
+    saveState();
+  });
+  textarea.addEventListener('mousedown', e => e.stopPropagation());
+  textarea.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+  el.querySelector('.open-link').addEventListener('mousedown', e => e.stopPropagation());
+  el.querySelector('.open-link').addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+  el.querySelector('.delete-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    cards = cards.filter(c => c.id !== id);
+    el.remove();
+    updateEmpty();
+    updateCanvasSize();
+    saveState();
+  });
+  el.querySelector('.delete-btn').addEventListener('mousedown', e => e.stopPropagation());
+  el.querySelector('.delete-btn').addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+  setupDrag(el, cardData);
+  canvas.appendChild(el);
+  cards.push(cardData);
+  updateEmpty();
+  return cardData;
+}
+
+/* ── Text card ── */
+function makeTextCard(text, x, y, color) {
+  const id = Date.now() + '_' + Math.random().toString(36).slice(2);
+  text  = text  || '';
+  color = color || '';
+
+  const el = document.createElement('div');
+  el.className = 'link-card';
+  el.dataset.id = id;
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+
+  el.innerHTML = `
+    <div class="card-header">
+      <span class="platform-dot dot-text"></span>
+      <span class="platform-label">Note</span>
+      <div class="colour-swatches"></div>
+      <button class="delete-btn" aria-label="Remove card">&times;</button>
+    </div>
+    <div class="text-body">
+      <textarea class="text-content-input" placeholder="Type your note here…" spellcheck="true"></textarea>
+    </div>
+  `;
+
+  const contentEl  = el.querySelector('.text-content-input');
+  contentEl.value = text;
+
+  function autoResize() {
+    contentEl.style.height = 'auto';
+    contentEl.style.height = Math.min(contentEl.scrollHeight, 220) + 'px';
+  }
+  setTimeout(autoResize, 0);
+
+  const cardData = { id, type: 'text', text, x, y, color, el };
+
+  makeColourStrip(cardData, el);
+
+  if (color) applyColour(el, cardData, color);
+
+  contentEl.addEventListener('input', () => { cardData.text = contentEl.value; autoResize(); saveState(); });
+  contentEl.addEventListener('mousedown', e => e.stopPropagation());
+  contentEl.addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+  el.querySelector('.delete-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    cards = cards.filter(c => c.id !== id);
+    el.remove();
+    updateEmpty();
+    updateCanvasSize();
+    saveState();
+  });
+  el.querySelector('.delete-btn').addEventListener('mousedown', e => e.stopPropagation());
+  el.querySelector('.delete-btn').addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+  setupDrag(el, cardData);
+  canvas.appendChild(el);
+  cards.push(cardData);
+  updateEmpty();
+  return cardData;
+}
+
+/* ── Add helpers ── */
+function addCard(url, x, y, note, color) {
+  if (!url || !url.trim()) return;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  if (x === undefined) { const p = autoPos(); x = p.x; y = p.y; }
+  makeCard(url, x, y, note, color);
+  saveState();
+  updateCanvasSize();
+}
+
+function addTextCard(text, x, y, color) {
+  if (x === undefined) { const p = autoPos(); x = p.x; y = p.y; }
+  makeTextCard(text || '', x, y, color || '');
+  saveState();
+  updateCanvasSize();
+}
+
+/* ── Toolbar events ── */
+titleInput.addEventListener('input', () => {
+  document.title = getTitle() + ' · Link Board';
+  saveState();
+});
+titleInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { titleInput.blur(); input.focus(); }
+});
+
+addBtn.addEventListener('click', () => {
+  addCard(input.value.trim());
+  input.value = '';
+  input.focus();
+});
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { addCard(input.value.trim()); input.value = ''; }
+});
+
+addTxtBtn.addEventListener('click', () => { addTextCard(); });
+
+/* Close any open colour dropdown when clicking outside */
+document.addEventListener('click', e => {
+  if (!e.target.closest('.colour-dot') && !e.target.closest('.colour-strip')) {
+    document.querySelectorAll('.colour-strip').forEach(s => { s.hidden = true; });
+  }
+});
+
+shareBtn.addEventListener('click', () => {
+  navigator.clipboard.writeText(location.href).then(() => {
+    showToast('Board link copied — share it with anyone!');
+  }).catch(() => {
+    prompt('Copy this link to share your board:', location.href);
+  });
+});
+
+clearBtn.addEventListener('click', () => {
+  if (cards.length === 0) return;
+  if (!confirm('Clear all cards from the board?')) return;
+  cards.forEach(c => c.el.remove());
+  cards = [];
+  updateEmpty();
+  updateCanvasSize();
+  history.replaceState(null, '', location.pathname);
+});
+
+/* ── Load from hash ── */
+const saved = loadState();
+if (saved) {
+  if (saved.title) {
+    titleInput.value = saved.title;
+    document.title = saved.title + ' · Link Board';
+  }
+  if (saved.cards && saved.cards.length > 0) {
+    saved.cards.forEach(d => {
+      if (!d.type || d.type === 'link') {
+        addCard(d.url, d.x, d.y, d.note, d.color);
+      } else if (d.type === 'text') {
+        addTextCard(d.text, d.x, d.y, d.color);
+      }
+    });
+  } else {
+    updateEmpty();
+  }
+} else {
+  updateEmpty();
+}
+updateCanvasSize();
+</script>
+</body>
+</html>
