@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Link Board</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+/* ================= BASE ================= */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f5f3ef;
+  --surface: #ffffff;
+  --border: rgba(0,0,0,0.08);
+  --border-strong: rgba(0,0,0,0.15);
+  --text: #1a1a1a;
+  --text-muted: #888;
+  --text-faint: #bbb;
+  --radius: 12px;
+  --toolbar-h: 60px;
+  --card-w: 240px;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ================= TOOLBAR ================= */
+#toolbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: var(--toolbar-h);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  z-index: 1000;
+}
+
+.tb-btn {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+/* ================= BOARD ================= */
+#board {
+  position: fixed;
+  top: var(--toolbar-h);
+  left: 0; right: 0; bottom: 0;
+  overflow: auto;
+}
+
+#canvas {
+  position: absolute;
+  top: 0; left: 0;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+/* ================= CARDS ================= */
+.link-card {
+  position: absolute;
+  width: var(--card-w);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: grab;
+  user-select: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-note textarea,
+.text-content-input {
+  width: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 10px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+/* ================= COLORS ================= */
+.link-card.c-blue { background: #eff6ff; }
+.link-card.c-pink { background: #fdf2f8; }
+.link-card.c-green { background: #f0fdf4; }
+
+/* ================= EMPTY STATE ================= */
+#empty-state {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-faint);
+}
+</style>
+</head>
+
+<body>
+
+<div id="toolbar">
+  <input id="board-title" value="My Board" />
+  <input id="url-input" placeholder="Paste link..." />
+  <button class="tb-btn" id="add-btn">Add Link</button>
+  <button class="tb-btn" id="add-text-btn">Add Text</button>
+</div>
+
+<div id="board">
+  <div id="canvas"></div>
+  <div id="empty-state">Start by adding a link or note</div>
+</div>
+
+<script>
+/* ================= STATE ================= */
+const canvas = document.getElementById("canvas");
+let cards = [];
+window.cards = cards;
+
+let dragState = null;
+
+/* ================= HELPERS ================= */
+function updateEmpty() {
+  document.getElementById("empty-state").style.display =
+    cards.length ? "none" : "block";
+}
+
+function updateCanvasSize() {}
+
+function autoPos() {
+  return { x: 40 + cards.length * 20, y: 40 + cards.length * 20 };
+}
+
+/* ================= CARD CREATION ================= */
+function makeCard(url, x, y, note = "", color = "") {
+  const id = crypto.randomUUID();
+
+  const el = document.createElement("div");
+  el.className = "link-card";
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+
+  el.innerHTML = `
+    <div class="card-header">
+      <span>Link</span>
+      <button>×</button>
+    </div>
+    <textarea class="card-note"></textarea>
+  `;
+
+  const textarea = el.querySelector("textarea");
+  textarea.value = note;
+
+  textarea.addEventListener("input", () => {
+    card.text = textarea.value;
+    saveState();
+  });
+
+  canvas.appendChild(el);
+
+  const card = { id, type: "link", url, x, y, note, color, el };
+  cards.push(card);
+
+  return card;
+}
+
+function makeTextCard(text, x, y, color = "") {
+  const id = crypto.randomUUID();
+
+  const el = document.createElement("div");
+  el.className = "link-card";
+  el.style.left = x + "px";
+  el.style.top = y + "px";
+
+  el.innerHTML = `
+    <div class="card-header">Note</div>
+    <textarea class="text-content-input"></textarea>
+  `;
+
+  const textarea = el.querySelector("textarea");
+  textarea.value = text;
+
+  textarea.addEventListener("input", () => {
+    card.text = textarea.value;
+    saveState();
+  });
+
+  canvas.appendChild(el);
+
+  const card = { id, type: "text", text, x, y, color, el };
+  cards.push(card);
+
+  return card;
+}
+
+/* ================= FIREBASE ================= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  onSnapshot
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDrjoXhHTxTyX3YI0XQ5hEqNHpOsVZ58qo",
+  authDomain: "refs-and.firebaseapp.com",
+  projectId: "refs-and",
+  storageBucket: "refs-and.firebasestorage.app",
+  messagingSenderId: "485568613975",
+  appId: "1:485568613975:web:537fd4bda717a60e2a9d12"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const params = new URLSearchParams(location.search);
+let boardId = params.get("board");
+
+if (!boardId) {
+  boardId = crypto.randomUUID();
+  params.set("board", boardId);
+  history.replaceState(null, "", location.pathname + "?" + params);
+}
+
+let saveTimeout;
+let isRemote = false;
+
+/* ================= SAVE (DEBOUNCED) ================= */
+function saveState() {
+  clearTimeout(saveTimeout);
+
+  saveTimeout = setTimeout(async () => {
+    if (isRemote) return;
+
+    const data = {
+      title: document.getElementById("board-title").value,
+      cards: cards.map(c => ({
+        id: c.id,
+        type: c.type,
+        x: c.x,
+        y: c.y,
+        note: c.note || "",
+        text: c.text || "",
+        url: c.url || "",
+        color: c.color || ""
+      }))
+    };
+
+    await setDoc(doc(db, "boards", boardId), data);
+  }, 400);
+}
+
+/* ================= REALTIME SYNC ================= */
+onSnapshot(doc(db, "boards", boardId), snap => {
+  if (!snap.exists()) return;
+
+  const data = snap.data();
+  isRemote = true;
+
+  const existing = new Map(cards.map(c => [c.id, c]));
+
+  (data.cards || []).forEach(d => {
+    let card = existing.get(d.id);
+
+    if (!card) {
+      if (d.type === "text") {
+        makeTextCard(d.text, d.x, d.y, d.color);
+      } else {
+        makeCard(d.url, d.x, d.y, d.note, d.color);
+      }
+    }
+  });
+
+  isRemote = false;
+
+  updateEmpty();
+});
+
+updateEmpty();
+
+/* ================= UI ================= */
+document.getElementById("add-btn").onclick = () => {
+  const url = document.getElementById("url-input").value;
+  if (!url) return;
+  const pos = autoPos();
+  makeCard(url, pos.x, pos.y);
+  saveState();
+};
+
+document.getElementById("add-text-btn").onclick = () => {
+  const pos = autoPos();
+  makeTextCard("", pos.x, pos.y);
+  saveState();
+};
+</script>
+
+</body>
+</html>
